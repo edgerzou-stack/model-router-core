@@ -1,0 +1,15 @@
+providers:
+  premium:
+    provider: mock-premium
+    model: gpt-plan-review-stub
+  cheap:
+    provider: mock-cheap
+    model: deepseek-execute-stub
+routing:
+  approval_after_plan: true
+  strategy: rule_based
+  escalation_flags:
+    - ambiguous
+    - high_risk
+    - cross_boundary
+    - auth_billing_data
