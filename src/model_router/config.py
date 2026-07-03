@@ -16,6 +16,8 @@ class RoleConfig:
     provider: str
     model: str
     api_key_env: str
+    base_url: str | None = None
+    api_style: str | None = None
 
 
 @dataclass
@@ -67,6 +69,8 @@ def parse_config(data: dict[str, Any], path: Path) -> AppConfig:
             provider=str(role["provider"]),
             model=str(role["model"]),
             api_key_env=str(role["api_key_env"]),
+            base_url=str(role["base_url"]) if role.get("base_url") else None,
+            api_style=str(role["api_style"]) if role.get("api_style") else None,
         )
     approval_after_plan = runtime.get("approval_after_plan")
     strategy = runtime.get("strategy")

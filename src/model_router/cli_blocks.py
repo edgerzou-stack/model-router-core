@@ -24,3 +24,27 @@ def render_phase_block(title: str, summary: list[str]) -> str:
     for item in summary:
         lines.append(f"> - {item}")
     return "\n".join(lines)
+
+
+def render_error_block(title: str, details: list[str]) -> str:
+    lines = ["---", f"> ### {title}"]
+    for item in details:
+        lines.append(f"> - {item}")
+    return "\n".join(lines)
+
+
+def render_playbook_block(title: str, completed: list[str], active: list[str], next_action: list[str]) -> str:
+    lines = [
+        "---",
+        f"> ### {title}",
+        "> **✅ Completed**",
+    ]
+    for item in completed:
+        lines.append(f"> - {item}")
+    lines.append("> **🔄 Active**")
+    for item in active:
+        lines.append(f"> - {item}")
+    lines.append("> **➡️ Next**")
+    for item in next_action:
+        lines.append(f"> - {item}")
+    return "\n".join(lines)

@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 import shutil
 
-from .cli_blocks import render_phase_block
+from .cli_blocks import render_error_block, render_phase_block, render_playbook_block
 from .config import load_config
 from .diagnostics import ReadinessState, diagnose
 from .providers.mock_provider import MockProvider
@@ -16,6 +16,7 @@ from .registry import resolve_provider
 from .state_store import StateStore
 from .types import HandoffPacket, TaskRequest
 from .workflow import WorkflowEngine
+from .exceptions import ProviderRequestError
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -67,7 +68,15 @@ def make_engine(config=None) -> WorkflowEngine:
             premium_provider=MockProvider("premium"),
             cheap_provider=MockProvider("cheap"),
         )
+    from .router import Router
+    router = Router(
+        model_overrides={
+            "premium": (config.roles["premium"].provider, config.roles["premium"].model),
+            "cheap": (config.roles["cheap"].provider, config.roles["cheap"].model),
+        },
+    )
     return WorkflowEngine(
+        router=router,
         premium_provider=resolve_provider(config, "premium"),
         cheap_provider=resolve_provider(config, "cheap"),
     )
@@ -84,9 +93,18 @@ def cmd_start(args: argparse.Namespace) -> int:
         files_in_scope=args.files,
         risk_flags=args.risk,
     )
-    state = engine.start(request)
+    try:
+        state = engine.start(request)
+    except ProviderRequestError as exc:
+        details = [f"Provider: {exc.provider}", f"Model: {exc.model}"]
+        if exc.status_code is not None:
+            details.append(f"HTTP status: {exc.status_code}")
+        if exc.response_excerpt:
+            details.append(f"Response excerpt: {exc.response_excerpt}")
+        print(render_error_block("Plan Failed", details))
+        return 2
     path = store.save(state)
-    print(render_phase_block("Plan Phase", [f"Task started: {task_id}", f"State file: {path}", "Plan generated.", "Human approval is required before execution."]))
+    print(render_playbook_block("Plan Phase", [f"Task started: {task_id}", "Plan generated."], [f"State file: {path}", "Waiting for explicit human approval before execution."], [f"Run: model-router approve --state {path} --goal <goal>"]))
     print(state.plan_output)
     return 0
 
@@ -102,20 +120,31 @@ def cmd_approve(args: argparse.Namespace) -> int:
         acceptance_checks=args.acceptance or ["Approved work is completed"],
         escalate_if=args.escalate_if or ["Ambiguity appears"],
     )
-    engine = make_engine()
+    config = load_config() if Path("config/runtime.yaml").exists() else None
+    engine = make_engine(config)
     state = engine.approve_plan(state, handoff)
     path = store.save(state)
-    print(f"Plan approved. Updated state: {path}")
+    print(render_playbook_block("Approval Recorded", ["Plan approved."], [f"State file updated: {path}", "Task is now ready for execute."], [f"Run: model-router execute --state {path}"]))
     return 0
 
 
 def cmd_execute(args: argparse.Namespace) -> int:
     store = StateStore()
     state = store.load(args.state)
-    engine = make_engine()
-    state = engine.execute(state)
+    config = load_config() if Path("config/runtime.yaml").exists() else None
+    engine = make_engine(config)
+    try:
+        state = engine.execute(state)
+    except ProviderRequestError as exc:
+        details = [f"Provider: {exc.provider}", f"Model: {exc.model}"]
+        if exc.status_code is not None:
+            details.append(f"HTTP status: {exc.status_code}")
+        if exc.response_excerpt:
+            details.append(f"Response excerpt: {exc.response_excerpt}")
+        print(render_error_block("Execute Failed", details))
+        return 2
     path = store.save(state)
-    print(f"Execution finished. Updated state: {path}")
+    print(render_playbook_block("Execute Phase", ["Execution finished."], [f"State file updated: {path}", "Execution result captured for review."], [f"Run: model-router review --state {path}"]))
     print(state.execute_output)
     return 0
 
@@ -123,10 +152,20 @@ def cmd_execute(args: argparse.Namespace) -> int:
 def cmd_review(args: argparse.Namespace) -> int:
     store = StateStore()
     state = store.load(args.state)
-    engine = make_engine()
-    state = engine.review(state)
+    config = load_config() if Path("config/runtime.yaml").exists() else None
+    engine = make_engine(config)
+    try:
+        state = engine.review(state)
+    except ProviderRequestError as exc:
+        details = [f"Provider: {exc.provider}", f"Model: {exc.model}"]
+        if exc.status_code is not None:
+            details.append(f"HTTP status: {exc.status_code}")
+        if exc.response_excerpt:
+            details.append(f"Response excerpt: {exc.response_excerpt}")
+        print(render_error_block("Review Failed", details))
+        return 2
     path = store.save(state)
-    print(f"Review finished. Updated state: {path}")
+    print(render_playbook_block("Review Phase", ["Review finished."], [f"State file updated: {path}", "Review result captured."], [f"Inspect: model-router show --state {path}"]))
     print(state.review_output)
     return 0
 
@@ -146,7 +185,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(f"Template missing: {template}")
         return 2
     shutil.copyfile(template, target)
-    print(render_phase_block("Initialization", [f"Created config: {target}", "Next step: export required environment variables.", "Then run: model-router doctor"]))
+    print(render_playbook_block("Initialization", [f"Created config: {target}"], ["Local runtime template is now present."], ["Export required environment variables.", "Then run: model-router doctor"]))
     return 0
 
 
@@ -176,9 +215,18 @@ def cmd_run(args: argparse.Namespace) -> int:
         files_in_scope=args.files,
         risk_flags=args.risk,
     )
-    state = engine.start(request)
+    try:
+        state = engine.start(request)
+    except ProviderRequestError as exc:
+        details = [f"Provider: {exc.provider}", f"Model: {exc.model}"]
+        if exc.status_code is not None:
+            details.append(f"HTTP status: {exc.status_code}")
+        if exc.response_excerpt:
+            details.append(f"Response excerpt: {exc.response_excerpt}")
+        print(render_error_block("Plan Failed", details))
+        return 2
     path = store.save(state)
-    print(render_phase_block("Run Started", [f"Task started: {task_id}", f"State file: {path}", "Plan completed.", "Human approval is required before execution.", f"Next step: model-router approve --state {path} --goal <goal>"]))
+    print(render_playbook_block("Run Started", [f"Task started: {task_id}", "Plan completed."], [f"State file: {path}", "Human approval is required before execution."], [f"Run: model-router approve --state {path} --goal <goal>"]))
     print(state.plan_output)
     return 0
 

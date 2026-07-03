@@ -12,7 +12,7 @@ def resolve_provider(app_config: AppConfig, role: str):
     if provider_name == "mock":
         return MockProvider(role)
     if provider_name == "openai":
-        return OpenAIProvider(role_config.api_key_env)
+        return OpenAIProvider(role_config.api_key_env, role_config.base_url, role_config.api_style)
     if provider_name == "deepseek":
-        return DeepSeekProvider(role_config.api_key_env)
+        return DeepSeekProvider(role_config.api_key_env, role_config.base_url)
     raise ValueError(f"Unknown provider: {provider_name}")
